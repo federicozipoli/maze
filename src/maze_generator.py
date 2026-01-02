@@ -88,6 +88,29 @@ class MazeGenerator:
         if not carved_any:
             self.dead_ends.append((row, col))
     
+    def _would_create_open_area(self, row: int, col: int) -> bool:
+        """Check if making this cell a path would create a 2x2 open area."""
+        # Check all four 2x2 squares that include this cell
+        for dr, dc in [(0, 0), (0, -1), (-1, 0), (-1, -1)]:
+            # Top-left corner of the 2x2 square to check
+            r, c = row + dr, col + dc
+            
+            # Count open cells in this 2x2 area (treating the target cell as open)
+            open_count = 0
+            for check_r in range(r, r + 2):
+                for check_c in range(c, c + 2):
+                    if check_r < 0 or check_r >= self.height or check_c < 0 or check_c >= self.width:
+                        continue
+                    if (check_r, check_c) == (row, col):
+                        open_count += 1  # This cell would become open
+                    elif self.maze[check_r][check_c] == 0:
+                        open_count += 1
+            
+            if open_count >= 4:
+                return True
+        
+        return False
+
     def _extend_dead_ends(self) -> None:
         """Extend dead ends to create longer false paths."""
         solution_set = set(self.solution_path)
@@ -128,6 +151,24 @@ class MazeGenerator:
             return
         if self.maze[row][col] == 0:  # Already a path
             return
+        
+        # Check if this would create a 2x2 open area
+        if self._would_create_open_area(wall_r, wall_c) or self._would_create_open_area(row, col):
+            return
+        
+        # Check that the new cell only connects back through our wall (not to other paths)
+        open_neighbors = 0
+        for check_dr, check_dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            check_r, check_c = row + check_dr, col + check_dc
+            if (0 <= check_r < self.height and 
+                0 <= check_c < self.width and
+                self.maze[check_r][check_c] == 0):
+                open_neighbors += 1
+        
+        # Should only have 1 open neighbor (the wall we're about to carve connects to start)
+        # But wall isn't carved yet, so should be 0
+        if open_neighbors > 0:
+            return
             
         self.maze[wall_r][wall_c] = 0
         self.maze[row][col] = 0
@@ -152,22 +193,24 @@ class MazeGenerator:
                     self.maze[new_row][new_col] == 1 and
                     self.maze[wall_row][wall_col] == 1):
                     
-                    # Make sure we don't reconnect to solution
-                    connects_to_solution = False
+                    # Check if this would create a 2x2 open area
+                    if self._would_create_open_area(wall_row, wall_col) or self._would_create_open_area(new_row, new_col):
+                        continue
+                    
+                    # Count how many open neighbors the new cell would have
+                    # (excluding the wall we're about to carve)
+                    open_neighbor_count = 0
                     for check_dr, check_dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                         check_r, check_c = new_row + check_dr, new_col + check_dc
-                        if (check_r, check_c) in solution_set:
-                            connects_to_solution = True
-                            break
+                        if (check_r, check_c) == (wall_row, wall_col):
+                            continue  # This is where we're coming from
                         if (0 <= check_r < self.height and 
                             0 <= check_c < self.width and
-                            self.maze[check_r][check_c] == 0 and
-                            (check_r, check_c) != (wall_row, wall_col)):
-                            # Would connect to existing path
-                            connects_to_solution = True
-                            break
+                            self.maze[check_r][check_c] == 0):
+                            open_neighbor_count += 1
                     
-                    if not connects_to_solution:
+                    # Only carve if this won't connect to any other paths
+                    if open_neighbor_count == 0:
                         self.maze[wall_row][wall_col] = 0
                         self.maze[new_row][new_col] = 0
                         row, col = new_row, new_col
