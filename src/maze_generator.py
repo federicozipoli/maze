@@ -248,6 +248,8 @@ def main():
     parser.add_argument('-s', '--seed', type=int, default=None, help='Random seed for reproducibility')
     parser.add_argument('--solution', action='store_true', help='Show solution path')
     parser.add_argument('-o', '--output', type=str, default=None, help='Save as PNG image')
+    parser.add_argument('--both', type=str, default=None, 
+                        help='Save both puzzle and solution as PNG (provide base name, e.g., "maze" creates maze_puzzle.png and maze_solution.png)')
     parser.add_argument('--cell-size', type=int, default=20, help='Cell size in pixels for image output')
     parser.add_argument('--simple', action='store_true', help='Use simple ASCII characters')
     
@@ -257,8 +259,41 @@ def main():
     generator = MazeGenerator(width=args.width, height=args.height, seed=args.seed)
     generator.generate()
     
-    # Output
-    if args.output:
+    # Output both puzzle and solution
+    if args.both:
+        try:
+            base_name = args.both.replace('.png', '')  # Remove .png if provided
+            
+            puzzle_path = generator.save_as_image(
+                filename=f"{base_name}_puzzle.png",
+                cell_size=args.cell_size,
+                show_solution=False
+            )
+            print(f"Puzzle saved to: {puzzle_path}")
+            
+            solution_path = generator.save_as_image(
+                filename=f"{base_name}_solution.png",
+                cell_size=args.cell_size,
+                show_solution=True
+            )
+            print(f"Solution saved to: {solution_path}")
+            
+        except ImportError as e:
+            print(f"Error: {e}")
+            print("\nFalling back to ASCII output:\n")
+            print("=== PUZZLE ===")
+            if args.simple:
+                print(generator.to_simple_ascii(show_solution=False))
+            else:
+                print(generator.to_ascii(show_solution=False))
+            print("\n=== SOLUTION ===")
+            if args.simple:
+                print(generator.to_simple_ascii(show_solution=True))
+            else:
+                print(generator.to_ascii(show_solution=True))
+    
+    # Output single file
+    elif args.output:
         try:
             filepath = generator.save_as_image(
                 filename=args.output,
