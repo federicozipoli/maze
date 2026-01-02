@@ -19,3 +19,6 @@ Generate mazes
 ## Use simple ASCII (# for walls) instead of Unicode blocks
 `python maze_generator.py --simple`
 
+## Generate a tricky maze with longer false paths
+python maze_generator.py -W 31 -H 31 --deceptive --both my_hard_maze
+

@@ -14,7 +14,7 @@ from pathlib import Path
 class MazeGenerator:
     """Generate random solvable mazes using recursive backtracking."""
     
-    def __init__(self, width: int = 21, height: int = 21, seed: Optional[int] = None):
+    def __init__(self, width: int = 21, height: int = 21, seed: Optional[int] = None, deceptive: bool = False):
         """
         Initialize the maze generator.
         
@@ -22,10 +22,12 @@ class MazeGenerator:
             width: Width of the maze (should be odd for proper walls)
             height: Height of the maze (should be odd for proper walls)
             seed: Random seed for reproducibility (None for random)
+            deceptive: If True, create longer false paths (dead ends)
         """
         # Ensure odd dimensions for proper wall structure
         self.width = width if width % 2 == 1 else width + 1
         self.height = height if height % 2 == 1 else height + 1
+        self.deceptive = deceptive
         
         if seed is not None:
             random.seed(seed)
@@ -39,6 +41,9 @@ class MazeGenerator:
         
         # Solution path (filled after solving)
         self.solution_path: list[tuple[int, int]] = []
+        
+        # Track dead ends for deceptive mode
+        self.dead_ends: list[tuple[int, int]] = []
     
     def generate(self) -> list[list[int]]:
         """Generate the maze using recursive backtracking."""
@@ -51,6 +56,10 @@ class MazeGenerator:
         # Find and store the solution
         self._solve()
         
+        # If deceptive mode, extend the dead ends
+        if self.deceptive:
+            self._extend_dead_ends()
+        
         return self.maze
     
     def _carve_passages(self, row: int, col: int) -> None:
@@ -61,6 +70,7 @@ class MazeGenerator:
         directions = [(-2, 0), (0, 2), (2, 0), (0, -2)]
         random.shuffle(directions)
         
+        carved_any = False
         for dr, dc in directions:
             new_row, new_col = row + dr, col + dc
             
@@ -72,6 +82,101 @@ class MazeGenerator:
                 # Carve through the wall between current and new cell
                 self.maze[row + dr // 2][col + dc // 2] = 0
                 self._carve_passages(new_row, new_col)
+                carved_any = True
+        
+        # If we didn't carve any new passages, this is a dead end
+        if not carved_any:
+            self.dead_ends.append((row, col))
+    
+    def _extend_dead_ends(self) -> None:
+        """Extend dead ends to create longer false paths."""
+        solution_set = set(self.solution_path)
+        
+        # Find cells adjacent to the solution that could spawn false paths
+        candidates = []
+        for row in range(1, self.height - 1):
+            for col in range(1, self.width - 1):
+                if self.maze[row][col] == 0 and (row, col) in solution_set:
+                    # Check for walls we could break through
+                    for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                        wall_r, wall_c = row + dr, col + dc
+                        beyond_r, beyond_c = row + 2*dr, col + 2*dc
+                        
+                        if (1 <= beyond_r < self.height - 1 and
+                            1 <= beyond_c < self.width - 1 and
+                            self.maze[wall_r][wall_c] == 1 and
+                            self.maze[beyond_r][beyond_c] == 1):
+                            candidates.append((row, col, dr, dc))
+        
+        # Create several false paths branching from solution
+        random.shuffle(candidates)
+        num_false_paths = min(len(candidates), max(3, (self.width * self.height) // 50))
+        
+        for i in range(num_false_paths):
+            if i >= len(candidates):
+                break
+            row, col, dr, dc = candidates[i]
+            self._carve_false_path(row, col, dr, dc, solution_set)
+    
+    def _carve_false_path(self, start_row: int, start_col: int, dr: int, dc: int, solution_set: set) -> None:
+        """Carve a long winding false path from a point on the solution."""
+        # Break through the initial wall
+        wall_r, wall_c = start_row + dr, start_col + dc
+        row, col = start_row + 2*dr, start_col + 2*dc
+        
+        if not (1 <= row < self.height - 1 and 1 <= col < self.width - 1):
+            return
+        if self.maze[row][col] == 0:  # Already a path
+            return
+            
+        self.maze[wall_r][wall_c] = 0
+        self.maze[row][col] = 0
+        
+        # Now carve a winding path
+        path_length = random.randint(5, 15)
+        
+        for _ in range(path_length):
+            # Prefer to continue in same direction, but sometimes turn
+            if random.random() < 0.6:
+                directions = [(dr, dc), (-dc, dr), (dc, -dr)]  # forward, left, right
+            else:
+                directions = [(-dc, dr), (dc, -dr), (dr, dc)]  # left, right, forward
+            
+            carved = False
+            for d_row, d_col in directions:
+                new_row, new_col = row + 2*d_row, col + 2*d_col
+                wall_row, wall_col = row + d_row, col + d_col
+                
+                if (1 <= new_row < self.height - 1 and
+                    1 <= new_col < self.width - 1 and
+                    self.maze[new_row][new_col] == 1 and
+                    self.maze[wall_row][wall_col] == 1):
+                    
+                    # Make sure we don't reconnect to solution
+                    connects_to_solution = False
+                    for check_dr, check_dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                        check_r, check_c = new_row + check_dr, new_col + check_dc
+                        if (check_r, check_c) in solution_set:
+                            connects_to_solution = True
+                            break
+                        if (0 <= check_r < self.height and 
+                            0 <= check_c < self.width and
+                            self.maze[check_r][check_c] == 0 and
+                            (check_r, check_c) != (wall_row, wall_col)):
+                            # Would connect to existing path
+                            connects_to_solution = True
+                            break
+                    
+                    if not connects_to_solution:
+                        self.maze[wall_row][wall_col] = 0
+                        self.maze[new_row][new_col] = 0
+                        row, col = new_row, new_col
+                        dr, dc = d_row, d_col
+                        carved = True
+                        break
+            
+            if not carved:
+                break
     
     def _solve(self) -> bool:
         """Find the solution path using BFS."""
@@ -246,6 +351,8 @@ def main():
     parser.add_argument('-W', '--width', type=int, default=21, help='Maze width (default: 21)')
     parser.add_argument('-H', '--height', type=int, default=21, help='Maze height (default: 21)')
     parser.add_argument('-s', '--seed', type=int, default=None, help='Random seed for reproducibility')
+    parser.add_argument('--deceptive', action='store_true', 
+                        help='Create longer false paths (dead ends) to make the maze harder')
     parser.add_argument('--solution', action='store_true', help='Show solution path')
     parser.add_argument('-o', '--output', type=str, default=None, help='Save as PNG image')
     parser.add_argument('--both', type=str, default=None, 
@@ -256,7 +363,7 @@ def main():
     args = parser.parse_args()
     
     # Generate maze
-    generator = MazeGenerator(width=args.width, height=args.height, seed=args.seed)
+    generator = MazeGenerator(width=args.width, height=args.height, seed=args.seed, deceptive=args.deceptive)
     generator.generate()
     
     # Output both puzzle and solution
