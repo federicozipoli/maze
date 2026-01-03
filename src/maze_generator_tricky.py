@@ -14,7 +14,8 @@ from pathlib import Path
 class MazeGenerator:
     """Generate random solvable mazes using recursive backtracking."""
     
-    def __init__(self, width: int = 21, height: int = 21, seed: Optional[int] = None, deceptive: bool = False):
+    def __init__(self, width: int = 21, height: int = 21, seed: Optional[int] = None, 
+                 deceptive: bool = False, challenging: bool = False):
         """
         Initialize the maze generator.
         
@@ -23,11 +24,13 @@ class MazeGenerator:
             height: Height of the maze (should be odd for proper walls)
             seed: Random seed for reproducibility (None for random)
             deceptive: If True, create longer false paths (dead ends)
+            challenging: If True, create a more confusing maze with balanced branches
         """
         # Ensure odd dimensions for proper wall structure
         self.width = width if width % 2 == 1 else width + 1
         self.height = height if height % 2 == 1 else height + 1
         self.deceptive = deceptive
+        self.challenging = challenging
         
         if seed is not None:
             random.seed(seed)
@@ -47,7 +50,10 @@ class MazeGenerator:
     
     def generate(self) -> list[list[int]]:
         """Generate the maze using recursive backtracking."""
-        self._carve_passages(1, 1)
+        if self.challenging:
+            self._carve_passages_challenging()
+        else:
+            self._carve_passages(1, 1)
         
         # Ensure start and end are open
         self.maze[self.start[0]][self.start[1]] = 0
@@ -61,6 +67,44 @@ class MazeGenerator:
             self._extend_dead_ends()
         
         return self.maze
+    
+    def _carve_passages_challenging(self) -> None:
+        """
+        Create a more challenging maze using modified Prim's algorithm.
+        This creates more balanced branches that all look equally promising.
+        """
+        # Start from a random cell
+        start_row, start_col = 1, 1
+        self.maze[start_row][start_col] = 0
+        
+        # Frontier: walls that could be carved (with the cell they'd connect to)
+        frontier = []
+        
+        def add_frontier(row, col):
+            """Add neighboring walls to frontier."""
+            for dr, dc in [(-2, 0), (2, 0), (0, -2), (0, 2)]:
+                new_row, new_col = row + dr, col + dc
+                wall_row, wall_col = row + dr // 2, col + dc // 2
+                if (1 <= new_row < self.height - 1 and 
+                    1 <= new_col < self.width - 1 and
+                    self.maze[new_row][new_col] == 1):
+                    frontier.append((wall_row, wall_col, new_row, new_col))
+        
+        add_frontier(start_row, start_col)
+        
+        while frontier:
+            # Pick a random wall from frontier (this is key for balanced branches)
+            idx = random.randint(0, len(frontier) - 1)
+            wall_row, wall_col, new_row, new_col = frontier.pop(idx)
+            
+            # Check if the cell is still unvisited
+            if self.maze[new_row][new_col] == 1:
+                # Carve the wall and the cell
+                self.maze[wall_row][wall_col] = 0
+                self.maze[new_row][new_col] = 0
+                
+                # Add new frontier walls
+                add_frontier(new_row, new_col)
     
     def _carve_passages(self, start_row: int, start_col: int) -> None:
         """Iteratively carve passages through the maze using a stack (no recursion limit)."""
@@ -403,6 +447,8 @@ def main():
     parser.add_argument('-s', '--seed', type=int, default=None, help='Random seed for reproducibility')
     parser.add_argument('--deceptive', action='store_true', 
                         help='Create longer false paths (dead ends) to make the maze harder')
+    parser.add_argument('--challenging', action='store_true',
+                        help='Create a more confusing maze where all paths look equally promising')
     parser.add_argument('--solution', action='store_true', help='Show solution path')
     parser.add_argument('-o', '--output', type=str, default=None, help='Save as PNG image')
     parser.add_argument('--both', type=str, default=None, 
@@ -413,7 +459,8 @@ def main():
     args = parser.parse_args()
     
     # Generate maze
-    generator = MazeGenerator(width=args.width, height=args.height, seed=args.seed, deceptive=args.deceptive)
+    generator = MazeGenerator(width=args.width, height=args.height, seed=args.seed, 
+                              deceptive=args.deceptive, challenging=args.challenging)
     generator.generate()
     
     # Output both puzzle and solution
